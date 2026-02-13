@@ -215,7 +215,32 @@ class SalienceDETR(DNDETRDetector):
 
         # extract features
         multi_level_feats = self.backbone(images.tensors)
-        multi_level_feats = self.fpn(multi_level_feats)
+        # 添加调试信息
+        print(f"[DEBUG] Backbone output type: {type(multi_level_feats)}")
+        if isinstance(multi_level_feats, (list, tuple)):
+            print(f"[DEBUG] Number of feature levels: {len(multi_level_feats)}")
+            for i, feat in enumerate(multi_level_feats):
+                print(f"[DEBUG] Feature level {i}: shape = {feat.shape}, channels = {feat.size(1)}")
+        elif isinstance(multi_level_feats, dict):
+            print(f"[DEBUG] Feature dict keys: {multi_level_feats.keys()}")
+            for k, v in multi_level_feats.items():
+                print(f"[DEBUG] Feature {k}: shape = {v.shape}, channels = {v.size(1)}")
+
+        # 检查是否符合FPN期望
+        if isinstance(multi_level_feats, (list, tuple)):
+            actual_channels = [feat.size(1) for feat in multi_level_feats]
+            expected_channels = [512, 1024, 2048]
+            if actual_channels != expected_channels[:len(actual_channels)]:
+                print(
+                    f"[ERROR] Channel mismatch! Expected {expected_channels[:len(actual_channels)]}, got {actual_channels}")
+                # 临时修复：选择后3个特征图或调整通道数
+                if len(actual_channels) > 3:
+                    print(f"[WARNING] Using last 3 feature levels")
+                    multi_level_feats = multi_level_feats[-3:]
+                elif len(actual_channels) < 3:
+                    raise ValueError(f"Need at least 3 feature levels, got {len(actual_channels)}")
+        # 载入fpn
+        # multi_level_feats = self.fpn(multi_level_feats)
         multi_level_feats = self.neck(multi_level_feats)
 
         multi_level_masks = []
