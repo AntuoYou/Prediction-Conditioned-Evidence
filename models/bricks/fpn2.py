@@ -264,7 +264,7 @@ if __name__ == "__main__":
 
     # 创建海洋增强FPN
     fpn = MarineEnhancedFPN(
-        features_channels=[256, 512, 1024],
+        features_channels=[282, 1272, 7376],
         out_channels=256,
         use_marine_enhance=True
     )
