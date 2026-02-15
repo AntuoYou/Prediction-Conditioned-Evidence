@@ -9,6 +9,7 @@ from models.bricks.denoising import GenerateCDNQueries
 from models.bricks.losses import sigmoid_focal_loss
 from models.detectors.base_detector import DNDETRDetector
 from models.bricks.marine_enhanced_fpn3 import MarineEnhancedFPN_v3
+from models.bricks.fpn2 import MarineEnhancedFPN
 
 
 class SalienceCriterion(nn.Module):
@@ -187,10 +188,11 @@ class SalienceDETR(DNDETRDetector):
         self.backbone = backbone
 
         # fpn
-        # self.fpn = MarineEnhancedFPN_v3(
-        #     features_channels=[512, 1024, 2048],
-        #     out_channels=256
-        # )
+        self.fpn = MarineEnhancedFPN(
+            features_channels=[512, 1024, 2048],
+            out_channels=256,
+            use_marine_enhance=False
+        )
         # self.fpn = FPN(backbone.num_channels, embed_dim)
 
         self.neck = neck
