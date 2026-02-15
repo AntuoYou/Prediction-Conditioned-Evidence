@@ -50,7 +50,7 @@ model_path = "configs/salience_detr/salience_detr_swin_l_800_1333.py"
 resume_from_checkpoint = None
 learning_rate = 2e-5  # initial learning rate
 optimizer = optim.AdamW(lr=learning_rate, weight_decay=1e-4, betas=(0.9, 0.999))
-lr_scheduler = optim.lr_scheduler.MultiStepLR(milestones=[10], gamma=0.1)
+lr_scheduler = optim.lr_scheduler.MultiStepLR(milestones=[32, 40], gamma=0.5)
 
 param_dicts = param_dict.finetune_backbone_and_linear_projection(
     lr=learning_rate
