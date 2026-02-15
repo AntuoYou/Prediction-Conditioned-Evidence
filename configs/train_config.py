@@ -1,5 +1,5 @@
-from torch import optim
-
+import torch.optim as optim
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from datasets.coco import CocoDetection
 from transforms import presets
 from optimizer import param_dict
