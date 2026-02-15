@@ -55,12 +55,12 @@ optimizer = optim.AdamW(
     betas=(0.9, 0.999),
     eps=1e-8
 )
-# 使用余弦退火学习率调度器
-lr_scheduler = CosineAnnealingLR(
+
+milestones = [int(num_epochs * 2/3), int(num_epochs * 5/6)]
+lr_scheduler = optim.lr_scheduler.MultiStepLR(
     optimizer,
-    T_max=num_epochs,
-    eta_min=learning_rate * 1e-2,
-    last_epoch=-1
+    milestones=milestones,
+    gamma=0.5
 )
 
 param_dicts = param_dict.finetune_backbone_and_linear_projection(
