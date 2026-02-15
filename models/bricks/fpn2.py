@@ -12,11 +12,27 @@ class MarineEnhancedFPN(nn.Module):
     可以直接替换原始FPN，无需修改后续neck代码
     """
 
-    def __init__(self, features_channels, out_channels, use_marine_enhance=True):
+    def __init__(self, backbone, out_channels=256, use_marine_enhance=False):
         super(MarineEnhancedFPN, self).__init__()
 
         self.use_marine_enhance = use_marine_enhance
         self.out_channels = out_channels
+
+        # 根据backbone类型自动确定通道数
+        if isinstance(backbone, str):
+            if 'resnet50' in backbone.lower():
+                features_channels = [512, 1024, 2048]
+            elif 'swin_l' in backbone.lower():
+                features_channels = [384, 768, 1536]
+            elif 'swin_t' in backbone.lower():
+                features_channels = [192, 384, 768]
+            elif 'convnext' in backbone.lower():
+                features_channels = [384, 768, 1536]
+            else:
+                raise ValueError(f"Unknown backbone: {backbone}")
+        else:
+            # 或者从backbone实例中提取
+            features_channels = [512, 1024, 2048]
 
         # 原始的上采样层
         self.up_layers = nn.ModuleList([
