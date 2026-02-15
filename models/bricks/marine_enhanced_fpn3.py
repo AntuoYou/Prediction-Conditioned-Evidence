@@ -148,7 +148,7 @@ class MarineEnhancedFPN_v3(nn.Module):
     专为海洋小目标优化，保持100%兼容性
     """
 
-    def __init__(self, features_channels, out_channels, use_marine_enhance=True):
+    def __init__(self, features_channels, out_channels, use_marine_enhance=False):
         super().__init__()
 
         self.use_marine_enhance = use_marine_enhance

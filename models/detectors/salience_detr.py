@@ -187,10 +187,10 @@ class SalienceDETR(DNDETRDetector):
         self.backbone = backbone
 
         # fpn
-        self.fpn = MarineEnhancedFPN_v3(
-            features_channels=[512, 1024, 2048],
-            out_channels=256
-        )
+        # self.fpn = MarineEnhancedFPN_v3(
+        #     features_channels=[512, 1024, 2048],
+        #     out_channels=256
+        # )
         # self.fpn = FPN(backbone.num_channels, embed_dim)
 
         self.neck = neck
