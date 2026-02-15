@@ -1,5 +1,5 @@
 import torch.optim as optim
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR,MultiStepLR
 from datasets.coco import CocoDetection
 from transforms import presets
 from optimizer import param_dict
@@ -49,19 +49,8 @@ model_path = "configs/salience_detr/salience_detr_swin_l_800_1333.py"
 # resume_from_checkpoint = "checkpoints/salience_detr_resnet50_800_1333/train/2024-09-11-15_11_51/best_ap.pth"
 resume_from_checkpoint = None
 learning_rate = 2e-5  # initial learning rate
-optimizer = optim.AdamW(
-    lr=learning_rate,
-    weight_decay=1e-4,
-    betas=(0.9, 0.999),
-    eps=1e-8
-)
-
-milestones = [int(num_epochs * 2/3), int(num_epochs * 5/6)]
-lr_scheduler = optim.lr_scheduler.MultiStepLR(
-    optimizer,
-    milestones=milestones,
-    gamma=0.5
-)
+optimizer = optim.AdamW(lr=learning_rate, weight_decay=1e-4, betas=(0.9, 0.999))
+lr_scheduler = optim.lr_scheduler.MultiStepLR(milestones=[10], gamma=0.1)
 
 param_dicts = param_dict.finetune_backbone_and_linear_projection(
     lr=learning_rate
