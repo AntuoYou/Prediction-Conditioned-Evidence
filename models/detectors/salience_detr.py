@@ -229,7 +229,7 @@ class SalienceDETR(DNDETRDetector):
                 print(f"[DEBUG] Feature {k}: shape = {v.shape}, channels = {v.size(1)}")
 
         # 载入fpn
-        # multi_level_feats = self.fpn(multi_level_feats)
+        multi_level_feats = self.fpn(multi_level_feats)
         multi_level_feats = self.neck(multi_level_feats)
 
         multi_level_masks = []
