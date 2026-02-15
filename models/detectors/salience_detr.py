@@ -218,15 +218,15 @@ class SalienceDETR(DNDETRDetector):
         # extract features
         multi_level_feats = self.backbone(images.tensors)
         # 添加调试信息
-        print(f"[DEBUG] Backbone output type: {type(multi_level_feats)}")
-        if isinstance(multi_level_feats, (list, tuple)):
-            print(f"[DEBUG] Number of feature levels: {len(multi_level_feats)}")
-            for i, feat in enumerate(multi_level_feats):
-                print(f"[DEBUG] Feature level {i}: shape = {feat.shape}, channels = {feat.size(1)}")
-        elif isinstance(multi_level_feats, dict):
-            print(f"[DEBUG] Feature dict keys: {multi_level_feats.keys()}")
-            for k, v in multi_level_feats.items():
-                print(f"[DEBUG] Feature {k}: shape = {v.shape}, channels = {v.size(1)}")
+        # print(f"[DEBUG] Backbone output type: {type(multi_level_feats)}")
+        # if isinstance(multi_level_feats, (list, tuple)):
+        #     print(f"[DEBUG] Number of feature levels: {len(multi_level_feats)}")
+        #     for i, feat in enumerate(multi_level_feats):
+        #         print(f"[DEBUG] Feature level {i}: shape = {feat.shape}, channels = {feat.size(1)}")
+        # elif isinstance(multi_level_feats, dict):
+        #     print(f"[DEBUG] Feature dict keys: {multi_level_feats.keys()}")
+        #     for k, v in multi_level_feats.items():
+        #         print(f"[DEBUG] Feature {k}: shape = {v.shape}, channels = {v.size(1)}")
 
         # 载入fpn
         multi_level_feats = self.fpn(multi_level_feats)
