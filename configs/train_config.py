@@ -64,6 +64,5 @@ lr_scheduler = CosineAnnealingLR(
 )
 
 param_dicts = param_dict.finetune_backbone_and_linear_projection(
-    lr=learning_rate,
-    backbone_lr_mult=0.1
+    lr=learning_rate
 )
