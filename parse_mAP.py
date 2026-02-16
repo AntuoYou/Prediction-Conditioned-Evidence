@@ -1,110 +1,64 @@
 #!/usr/bin/env python3
 """
-解析SEADRONSEE数据集DETR模型训练日志中的mAP指标（华为NPU兼容版）
-支持灵活的日志格式，输出表格化结果并标记最佳mAP
+解析SEADRONSEE数据集DETR模型训练日志中的mAP指标
+专为华为NPU训练日志设计，只提取整体mAP和小目标mAP
 """
 
 import re
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 
-class FlexibleCOCOLogParser:
+class SimpleMAPParser:
     def __init__(self):
-        # 更灵活的正则表达式，允许各种空格和格式变化
-        self.patterns = {
-            # 更灵活的epoch匹配，支持各种格式
-            'epoch': [
-                re.compile(r'epoch\s*(\d+)', re.IGNORECASE),
-                re.compile(r'Epoch\s*(\d+)', re.IGNORECASE),
-                re.compile(r'EPOCH\s*(\d+)', re.IGNORECASE),
-                re.compile(r'\|\s*(\d+)\s*epoch', re.IGNORECASE),
-                re.compile(r'epoch:?\s*(\d+)', re.IGNORECASE),
-            ],
-            # mAP主要指标 - 非常灵活的正则表达式
-            'ap_all': re.compile(
-                r'Average\s*Precision.*?\(?AP\)?.*?'
-                r'(?:IoU|iou|IOU)[=\s:]*0\.50:0\.95.*?'
-                r'(?:area|AREA).*?(?:all|ALL).*?'
-                r'(?:maxDets|maxDet|maxDetections).*?100.*?'
-                r'[:=\s]*\s*([0-9]+\.[0-9]+|[0-9]+)',
-                re.IGNORECASE
-            ),
-            # AP50
-            'ap_50': re.compile(
-                r'Average\s*Precision.*?\(?AP\)?.*?'
-                r'(?:IoU|iou|IOU)[=\s:]*0\.50\b.*?'
-                r'(?:area|AREA).*?(?:all|ALL).*?'
-                r'(?:maxDets|maxDet|maxDetections).*?100.*?'
-                r'[:=\s]*\s*([0-9]+\.[0-9]+|[0-9]+)',
-                re.IGNORECASE
-            ),
-            # AP75
-            'ap_75': re.compile(
-                r'Average\s*Precision.*?\(?AP\)?.*?'
-                r'(?:IoU|iou|IOU)[=\s:]*0\.75\b.*?'
-                r'(?:area|AREA).*?(?:all|ALL).*?'
-                r'(?:maxDets|maxDet|maxDetections).*?100.*?'
-                r'[:=\s]*\s*([0-9]+\.[0-9]+|[0-9]+)',
-                re.IGNORECASE
-            ),
-            # AP Small
-            'ap_small': re.compile(
-                r'Average\s*Precision.*?\(?AP\)?.*?'
-                r'(?:IoU|iou|IOU)[=\s:]*0\.50:0\.95.*?'
-                r'(?:area|AREA).*?(?:small|SMALL).*?'
-                r'(?:maxDets|maxDet|maxDetections).*?100.*?'
-                r'[:=\s]*\s*([0-9]+\.[0-9]+|[0-9]+)',
-                re.IGNORECASE
-            ),
-            # AP Medium
-            'ap_medium': re.compile(
-                r'Average\s*Precision.*?\(?AP\)?.*?'
-                r'(?:IoU|iou|IOU)[=\s:]*0\.50:0\.95.*?'
-                r'(?:area|AREA).*?(?:medium|MEDIUM).*?'
-                r'(?:maxDets|maxDet|maxDetections).*?100.*?'
-                r'[:=\s]*\s*([0-9]+\.[0-9]+|[0-9]+)',
-                re.IGNORECASE
-            ),
-            # AP Large
-            'ap_large': re.compile(
-                r'Average\s*Precision.*?\(?AP\)?.*?'
-                r'(?:IoU|iou|IOU)[=\s:]*0\.50:0\.95.*?'
-                r'(?:area|AREA).*?(?:large|LARGE).*?'
-                r'(?:maxDets|maxDet|maxDetections).*?100.*?'
-                r'[:=\s]*\s*([0-9]+\.[0-9]+|[0-9]+)',
-                re.IGNORECASE
-            ),
-            # 简化的mAP匹配（如果上面的匹配失败）
-            'simple_map': re.compile(
-                r'(?:mAP|MAP|map|AP).*?[=\s:]*\s*([0-9]+\.[0-9]+|[0-9]+)',
-                re.IGNORECASE
-            ),
-        }
+        # 非常宽松的正则表达式，只匹配关键模式
+        self.epoch_pattern = re.compile(r'epoch\s*(\d+)', re.IGNORECASE)
 
-    def find_epoch(self, line):
-        """尝试用多种模式匹配epoch"""
-        for pattern in self.patterns['epoch']:
-            match = pattern.search(line)
-            if match:
-                return int(match.group(1))
-        return None
+        # 整体mAP：只要包含"Average Precision"和"area= all"即可
+        self.map_all_pattern = re.compile(
+            r'Average\s*Precision.*?area=\s*all.*?=\s*([0-9]+\.[0-9]+|[0-9]+)',
+            re.IGNORECASE | re.DOTALL
+        )
 
-    def extract_value(self, pattern, line):
-        """从单行中提取数值"""
+        # 小目标mAP：只要包含"Average Precision"和"area= small"即可
+        self.map_small_pattern = re.compile(
+            r'Average\s*Precision.*?area=\s*small.*?=\s*([0-9]+\.[0-9]+|[0-9]+)',
+            re.IGNORECASE | re.DOTALL
+        )
+
+        # 备用模式：直接匹配数字，如果上述模式失败
+        self.fallback_pattern = re.compile(r'=\s*([0-9]+\.[0-9]+|[0-9]+)')
+
+    def extract_value(self, pattern, line, fallback=False):
+        """从行中提取数值"""
         match = pattern.search(line)
         if match:
             try:
                 return float(match.group(1))
             except:
                 return None
+
+        # 如果主要模式失败且允许备用模式
+        if fallback:
+            # 提取最后一个等号后的数字
+            parts = line.split('=')
+            if len(parts) > 1:
+                last_part = parts[-1].strip()
+                num_match = re.search(r'([0-9]+\.[0-9]+|[0-9]+)', last_part)
+                if num_match:
+                    try:
+                        return float(num_match.group(1))
+                    except:
+                        return None
         return None
 
     def parse_log(self, log_content):
-        """解析日志内容，提取各epoch的mAP指标"""
+        """解析日志内容"""
         results = []
         current_epoch = None
         current_data = {}
+
         lines = log_content.split('\n')
 
         for i, line in enumerate(lines):
@@ -112,135 +66,108 @@ class FlexibleCOCOLogParser:
             if not line:
                 continue
 
-            # 尝试检测epoch
-            epoch = self.find_epoch(line)
-            if epoch is not None:
-                # 保存之前的epoch数据（如果有）
+            # 尝试匹配epoch
+            epoch_match = self.epoch_pattern.search(line)
+            if epoch_match:
+                # 保存之前的数据
                 if current_epoch is not None and current_data:
                     results.append((current_epoch, current_data.copy()))
-                current_epoch = epoch
-                current_data = {'epoch': epoch}
+
+                current_epoch = int(epoch_match.group(1))
+                current_data = {'epoch': current_epoch}
                 continue
 
-            # 如果还没有找到epoch，但遇到了数值，可能这是第一个epoch
-            if current_epoch is None and any(char.isdigit() and '.' in line for char in line):
-                # 尝试查找是否有隐藏的epoch信息
-                for j in range(max(0, i - 3), i):
-                    epoch = self.find_epoch(lines[j])
-                    if epoch is not None:
-                        current_epoch = epoch
-                        current_data = {'epoch': epoch}
+            # 如果还没有找到epoch，尝试检查前几行
+            if current_epoch is None and i > 0:
+                for j in range(max(0, i - 2), i):
+                    epoch_match = self.epoch_pattern.search(lines[j].strip())
+                    if epoch_match:
+                        current_epoch = int(epoch_match.group(1))
+                        current_data = {'epoch': current_epoch}
                         break
-                if current_epoch is None:
-                    # 假设这是第一个epoch
-                    current_epoch = 0
-                    current_data = {'epoch': 0}
 
-            # 尝试提取各种mAP指标
-            if current_epoch is not None:
-                for key in ['ap_all', 'ap_50', 'ap_75', 'ap_small', 'ap_medium', 'ap_large']:
-                    if key in self.patterns:
-                        value = self.extract_value(self.patterns[key], line)
-                        if value is not None:
-                            current_data[key] = value
+            # 提取整体mAP
+            if 'area= all' in line or 'area=all' in line or 'area = all' in line:
+                map_all = self.extract_value(self.map_all_pattern, line, fallback=True)
+                if map_all is not None:
+                    current_data['map_all'] = map_all
 
-                # 如果ap_all没找到，尝试简单匹配
-                if 'ap_all' not in current_data:
-                    value = self.extract_value(self.patterns['simple_map'], line)
-                    if value is not None:
-                        current_data['ap_all'] = value
+            # 提取小目标mAP
+            if 'area= small' in line or 'area=small' in line or 'area = small' in line:
+                map_small = self.extract_value(self.map_small_pattern, line, fallback=True)
+                if map_small is not None:
+                    current_data['map_small'] = map_small
 
         # 添加最后一个epoch的数据
-        if current_epoch is not None and current_data:
+        if current_epoch is not None and current_data and len(current_data) > 1:
             results.append((current_epoch, current_data))
-
-        # 如果没有明确的epoch信息，但找到了数据，将其视为单个epoch
-        if not results and any('ap_all' in data for data in [current_data] if current_data):
-            results.append((0, current_data))
 
         return results
 
 
-def print_debug_info(log_content, results):
-    """打印调试信息以帮助理解解析过程"""
-    print("\n🔍 调试信息:")
-    print("-" * 60)
-
-    # 显示找到的epoch数量
-    print(f"找到 {len(results)} 个epoch的数据")
-
-    # 显示每个epoch找到的指标
-    for epoch, data in results:
-        print(f"\nEpoch {epoch}:")
-        for key, value in data.items():
-            if key != 'epoch':
-                print(f"  {key}: {value}")
-
-    # 显示日志样本
-    print(f"\n📋 日志样本（前20行）:")
-    print("-" * 60)
-    lines = log_content.split('\n')[:20]
-    for i, line in enumerate(lines):
-        print(f"{i + 1:3d}: {line}")
-
-    print("-" * 60)
-
-
-def format_table(results):
-    """格式化输出表格"""
+def create_table(results):
+    """创建并输出表格"""
     if not results:
-        print("⚠️ 未找到有效的评估结果")
+        print("未找到有效的mAP数据")
+        return None, None, None
+
+    # 准备数据
+    epochs = []
+    map_all_values = []
+    map_small_values = []
+
+    for epoch, data in results:
+        epochs.append(epoch)
+        map_all_values.append(data.get('map_all', float('nan')))
+        map_small_values.append(data.get('map_small', float('nan')))
+
+    return epochs, map_all_values, map_small_values
+
+
+def print_results_table(epochs, map_all_values, map_small_values):
+    """打印结果表格"""
+    if not epochs:
+        print("没有数据可显示")
         return None, None
 
+    print("\n" + "=" * 60)
+    print("SEADRONSEE数据集 DETR模型训练结果")
+    print("华为NPU - 只显示整体mAP和小目标mAP")
+    print("=" * 60)
+
     # 表头
-    headers = ["Epoch", "mAP", "AP50", "AP75", "AP-S", "AP-M", "AP-L"]
+    print(f"{'Epoch':<8} | {'整体mAP':<12} | {'小目标mAP':<12}")
+    print("-" * 40)
 
-    # 准备表格数据
-    table_data = []
-    best_mAP = -1.0
+    # 查找最佳整体mAP
+    best_map = -1.0
     best_epoch = -1
+    best_small_map = -1.0
+    best_small_epoch = -1
 
-    for epoch, data in results:
-        # 获取主要指标（如果存在）
-        mAP = data.get('ap_all', 0.0)
-        row = [
-            str(epoch),
-            f"{mAP:.3f}" if 'ap_all' in data else "N/A",
-            f"{data.get('ap_50', 0.0):.3f}" if 'ap_50' in data else "N/A",
-            f"{data.get('ap_75', 0.0):.3f}" if 'ap_75' in data else "N/A",
-            f"{data.get('ap_small', 0.0):.3f}" if 'ap_small' in data else "N/A",
-            f"{data.get('ap_medium', 0.0):.3f}" if 'ap_medium' in data else "N/A",
-            f"{data.get('ap_large', 0.0):.3f}" if 'ap_large' in data else "N/A",
-        ]
-        table_data.append(row)
+    # 打印每行数据
+    for i, epoch in enumerate(epochs):
+        map_all = map_all_values[i]
+        map_small = map_small_values[i]
 
-        # 更新最佳mAP
-        if mAP > best_mAP and 'ap_all' in data:
-            best_mAP = mAP
+        # 格式化显示
+        map_all_str = f"{map_all:.4f}" if not float('nan') == map_all else "N/A"
+        map_small_str = f"{map_small:.4f}" if not float('nan') == map_small else "N/A"
+
+        print(f"{epoch:<8} | {map_all_str:<12} | {map_small_str:<12}")
+
+        # 更新最佳值
+        if not float('nan') == map_all and map_all > best_map:
+            best_map = map_all
             best_epoch = epoch
 
-    # 输出表格
-    print("\n" + "=" * 80)
-    print("SEADRONSEE数据集 DETR模型训练结果汇总（华为NPU）")
-    print("=" * 80)
+        if not float('nan') == map_small and map_small > best_small_map:
+            best_small_map = map_small
+            best_small_epoch = epoch
 
-    # 简单制表符格式的表格
-    col_widths = [10, 8, 8, 8, 8, 8, 8]
+    print("=" * 60)
 
-    # 打印表头
-    header_line = " | ".join(h.ljust(w) for h, w in zip(headers, col_widths))
-    separator = "-+-".join("-" * w for w in col_widths)
-    print(header_line)
-    print(separator)
-
-    # 打印数据行
-    for row in table_data:
-        row_line = " | ".join(val.ljust(w) for val, w in zip(row, col_widths))
-        print(row_line)
-
-    print("=" * 80)
-
-    return best_epoch, best_mAP
+    return best_epoch, best_map
 
 
 def main():
@@ -250,68 +177,74 @@ def main():
         # 从文件读取
         log_file = Path(sys.argv[1])
         if not log_file.exists():
-            print(f"❌ 错误: 文件 {log_file} 不存在")
+            print(f"错误: 文件 {log_file} 不存在")
             sys.exit(1)
 
         try:
-            log_content = log_file.read_text(encoding='utf-8', errors='ignore')
-        except:
-            print(f"❌ 错误: 无法读取文件 {log_file}")
+            with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                log_content = f.read()
+        except Exception as e:
+            print(f"读取文件时出错: {e}")
             sys.exit(1)
 
-        print(f"📁 正在解析日志文件: {log_file}")
+        print(f"正在解析日志文件: {log_file}")
     else:
         # 从标准输入读取
-        print("📝 请输入日志内容（Ctrl+D结束输入）:")
+        print("请输入日志内容（Ctrl+D结束输入）:")
         log_content = sys.stdin.read()
 
-    # 检查日志内容
-    if not log_content or len(log_content.strip()) == 0:
-        print("❌ 错误: 日志内容为空")
-        sys.exit(1)
-
     # 解析日志
-    parser = FlexibleCOCOLogParser()
+    parser = SimpleMAPParser()
     results = parser.parse_log(log_content)
 
-    # 输出结果
-    best_epoch, best_mAP = format_table(results)
+    # 创建表格
+    epochs, map_all_values, map_small_values = create_table(results)
 
-    # 输出最佳结果
-    if best_epoch != -1:
-        print(f"\n🏆 最佳模型: Epoch {best_epoch}")
-        print(f"   最佳mAP: {best_mAP:.3f} @ IoU=0.50:0.95")
+    # 打印结果
+    if epochs:
+        best_epoch, best_map = print_results_table(epochs, map_all_values, map_small_values)
 
-        # 输出该epoch的详细指标
-        for epoch, data in results:
-            if epoch == best_epoch:
-                print(f"\n   Epoch {best_epoch} 详细指标:")
-                if 'ap_50' in data:
-                    print(f"   AP@0.50: {data.get('ap_50', 0.0):.3f}")
-                if 'ap_75' in data:
-                    print(f"   AP@0.75: {data.get('ap_75', 0.0):.3f}")
-                if 'ap_small' in data:
-                    print(f"   AP-Small: {data.get('ap_small', 0.0):.3f}")
-                if 'ap_medium' in data:
-                    print(f"   AP-Medium: {data.get('ap_medium', 0.0):.3f}")
-                if 'ap_large' in data:
-                    print(f"   AP-Large: {data.get('ap_large', 0.0):.3f}")
-                break
+        # 输出统计信息
+        print(f"\n📊 统计信息:")
+        print(f"  共找到 {len(epochs)} 个epoch的评估结果")
+
+        if best_epoch != -1:
+            print(f"\n🏆 最佳整体mAP: {best_map:.4f} (Epoch {best_epoch})")
+
+            # 显示最佳epoch的小目标mAP
+            for i, epoch in enumerate(epochs):
+                if epoch == best_epoch:
+                    small_map = map_small_values[i]
+                    if not float('nan') == small_map:
+                        print(f"  对应的小目标mAP: {small_map:.4f}")
+                    break
+
+        # 计算平均值（忽略NaN）
+        valid_all_maps = [v for v in map_all_values if not float('nan') == v]
+        valid_small_maps = [v for v in map_small_values if not float('nan') == v]
+
+        if valid_all_maps:
+            avg_all = sum(valid_all_maps) / len(valid_all_maps)
+            print(f"  整体mAP平均值: {avg_all:.4f}")
+
+        if valid_small_maps:
+            avg_small = sum(valid_small_maps) / len(valid_small_maps)
+            print(f"  小目标mAP平均值: {avg_small:.4f}")
     else:
-        print("\n⚠️ 未找到有效的mAP指标")
-        print_debug_info(log_content, results)
+        print("\n⚠️ 未找到任何mAP数据")
+        print("\n提示: 请检查日志文件中是否包含以下格式的行:")
+        print("  - 包含 'Average Precision' 和 'area= all'")
+        print("  - 包含 'Average Precision' 和 'area= small'")
+        print("  - 每行最后应有类似 '= 0.435' 的数值")
 
-        # 提供更多帮助信息
-        print(f"\n💡 调试提示:")
-        print("1. 检查日志文件是否包含COCO评估输出")
-        print("2. 可以尝试在日志中搜索以下关键词:")
-        print("   - 'Average Precision'")
-        print("   - 'AP @[ IoU='")
-        print("   - 'mAP'")
-        print("   - 'epoch'")
-        print("3. 如果日志格式特殊，可以分享部分日志内容以便进一步调整解析器")
+        # 显示日志样本帮助调试
+        print("\n📋 日志样本:")
+        lines = log_content.split('\n')
+        sample_lines = [line for line in lines if 'Average Precision' in line][:5]
+        for i, line in enumerate(sample_lines[:5]):
+            print(f"  {i + 1}: {line[:100]}...")
 
-    print("=" * 80)
+    print("\n" + "=" * 60)
 
 
 if __name__ == "__main__":
