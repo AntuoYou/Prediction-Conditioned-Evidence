@@ -311,3 +311,37 @@ python tools/pytorch2onnx.py \
   year={2024}
 }
 ```
+
+```附录
+IoU metric: bbox
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.487
+ Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = 0.852
+ Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = 0.478
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.409
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.509
+ Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.632
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=  1 ] = 0.346
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets= 10 ] = 0.583
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = 0.625
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = 0.548
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area=medium | maxDets=100 ] = 0.642
+ Average Recall     (AR) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = 0.771
+
+[2026-02-17 05:54:40 det.util.engine]:
++------------------------+------+------+-------+--------+--------+
+| class                  | imgs | gts  | dets  | recall | ap     |
++------------------------+------+------+-------+--------+--------+
+| ignored                | 0    | 0    | 0     | -1.000 | -1.000 |
+| swimmer                | 1286 | 6206 | 33705 | 0.920  | 0.811  |
+| boat                   | 915  | 2214 | 8797  | 0.976  | 0.958  |
+| jetski                 | 320  | 320  | 5422  | 0.963  | 0.915  |
+| life_saving_appliances | 191  | 330  | 6206  | 0.903  | 0.664  |
+| buoy                   | 352  | 560  | 4038  | 0.955  | 0.911  |
++------------------------+------+------+-------+--------+--------+
+| mean results           |      |      |       | 0.943  | 0.852  |
++------------------------+------+------+-------+--------+--------+
+[2026-02-17 05:54:40 accelerate.tracking]: Successfully logged to TensorBoard
+[2026-02-17 05:54:41 det.__main__]: Training time: 1 day, 9:01:50
+[2026-02-17 05:54:41 accelerate.tracking]: TensorBoard writer closed
+
+```
