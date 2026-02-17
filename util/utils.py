@@ -356,23 +356,56 @@ def init_distributed_mode(args):
 
 
 def filter_mismatched_weights(model_state_dict, weight_state_dict):
+    """
+    过滤掉形状不匹配的权重，并返回处理后的权重字典和不匹配的键
+    """
     mismatch_keys = {}
-    for key in list(model_state_dict.keys()):
-        if key in weight_state_dict:
+    filtered_state_dict = {}
+
+    for key in weight_state_dict.keys():
+        if key in model_state_dict:
             value_model = model_state_dict[key]
             value_state_dict = weight_state_dict[key]
-            if value_model.shape != value_state_dict.shape:
-                weight_state_dict[key] = value_model
+
+            # 检查形状是否匹配
+            if value_model.shape == value_state_dict.shape:
+                filtered_state_dict[key] = value_state_dict
+            else:
+                # 记录形状不匹配的键
                 mismatch_keys[key] = [value_model.shape, value_state_dict.shape]
-    return weight_state_dict, mismatch_keys
+                print(
+                    f"[WARNING] Shape mismatch for {key}: model {value_model.shape} != checkpoint {value_state_dict.shape}")
+        else:
+            print(f"[WARNING] Key {key} not found in model")
+
+    return filtered_state_dict, mismatch_keys
 
 
 def load_checkpoint(file_name, map_location="cpu"):
+    """
+    加载检查点文件，支持本地路径、URL和OrderedDict
+    添加对NPU设备的支持
+    """
     if isinstance(file_name, str):
         if file_name.startswith("http://") or file_name.startswith("https://"):
             return torch.hub.load_state_dict_from_url(file_name, map_location=map_location)
         elif os.path.exists(file_name):
-            return torch.load(file_name, map_location=map_location)
+            try:
+                # 对于NPU设备，确保使用正确的map_location
+                if map_location == "npu" or (isinstance(map_location, str) and "npu" in map_location):
+                    # 先加载到CPU，然后移动到NPU
+                    checkpoint = torch.load(file_name, map_location="cpu")
+                    # 如果需要，将张量移动到NPU
+                    if hasattr(torch, 'npu'):
+                        for k, v in checkpoint.items():
+                            if isinstance(v, torch.Tensor):
+                                checkpoint[k] = v.to('npu')
+                    return checkpoint
+                else:
+                    return torch.load(file_name, map_location=map_location)
+            except Exception as e:
+                warnings.warn(f"Error loading checkpoint {file_name}: {e}")
+                return None
         else:
             warnings.warn("Given string, only url and local path of weight are supported, skip loading.")
             return None
@@ -382,41 +415,182 @@ def load_checkpoint(file_name, map_location="cpu"):
     return None
 
 
-def load_state_dict(model: nn.Module, state_dict: OrderedDict):
+def load_state_dict(model: nn.Module, state_dict: OrderedDict, strict=False):
+    """
+    安全加载状态字典，处理设备不匹配和形状不匹配问题
+
+    Args:
+        model: 要加载权重的模型
+        state_dict: 权重字典
+        strict: 是否严格匹配，默认为False以允许部分加载
+    """
     logger = logging.getLogger(os.path.basename(os.getcwd()) + "." + __name__)
+
     if state_dict is None:
         logger.warn("State dict is None, skip loading")
         return
 
-    # load _classes_ for inference
+    # 获取模型当前设备
+    model_device = next(model.parameters()).device if len(list(model.parameters())) > 0 else torch.device('cpu')
+    logger.info(f"Model device: {model_device}")
+
+    # 检查是否为NPU设备
+    is_npu_device = str(model_device) == 'npu' or (hasattr(model_device, 'type') and model_device.type == 'npu')
+
+    # 处理特殊键：不加载_classes_，因为它依赖于数据集
     if "_classes_" in state_dict:
-        dummy_classes = torch.zeros_like(state_dict["_classes_"])
-        model.register_buffer("_classes_", dummy_classes)
+        logger.info("Removing _classes_ from checkpoint (will use current dataset classes)")
+        state_dict.pop("_classes_")
 
-    # initialize keys list
-    matched_state_dict, mismatch_keys = filter_mismatched_weights(model.state_dict(), state_dict)
-    incompatible_keys = model.load_state_dict(matched_state_dict, strict=False)
-    missing_keys = incompatible_keys.missing_keys
-    unexpected_keys = incompatible_keys.unexpected_keys
-    if len(mismatch_keys) == 0 and len(missing_keys) == 0 and len(unexpected_keys) == 0:
-        logger.info(incompatible_keys)
+    # 将权重移动到模型所在设备
+    processed_state_dict = OrderedDict()
+    for key, value in state_dict.items():
+        if isinstance(value, torch.Tensor):
+            # 根据模型设备移动权重
+            if is_npu_device:
+                try:
+                    # 如果是NPU设备，确保权重在NPU上
+                    if hasattr(torch, 'npu'):
+                        processed_state_dict[key] = value.to(model_device)
+                    else:
+                        # 如果没有NPU支持，保持原样
+                        processed_state_dict[key] = value
+                except Exception as e:
+                    logger.warning(f"Failed to move tensor {key} to NPU: {e}")
+                    processed_state_dict[key] = value
+            else:
+                # 非NPU设备，正常移动
+                processed_state_dict[key] = value.to(model_device)
+        else:
+            processed_state_dict[key] = value
+
+    # 过滤掉形状不匹配的权重
+    model_state_dict = model.state_dict()
+    filtered_state_dict, mismatch_keys = filter_mismatched_weights(model_state_dict, processed_state_dict)
+
+    # 打印加载统计信息
+    total_keys = len(state_dict)
+    matched_keys = len(filtered_state_dict)
+    logger.info(f"Weight loading statistics: {matched_keys}/{total_keys} keys matched")
+
+    if mismatch_keys:
+        mismatch_tables = [["key name", "shape in model", "shape in checkpoint"]]
+
+        def format_shape(shape):
+            shape_str = "("
+            shape_str += ", ".join([str(i) for i in shape])
+            shape_str += ",)" if len(shape) == 1 else ")"
+            return shape_str
+
+        for key, (shape_model, shape_checkpoint) in mismatch_keys.items():
+            mismatch_tables.append([key, format_shape(shape_model), format_shape(shape_checkpoint)])
+
+        # 只显示前10个不匹配的键
+        if len(mismatch_keys) > 10:
+            mismatch_tables.append([f"... and {len(mismatch_keys) - 10} more", "", ""])
+
+        mismatch_tables = AsciiTable(mismatch_tables)
+        mismatch_tables.inner_footing_row_border = True
+        logger.warning("Shape mismatch keys:\n" + mismatch_tables.table + "\n")
+
+    # 加载过滤后的权重
+    try:
+        incompatible_keys = model.load_state_dict(filtered_state_dict, strict=strict)
+
+        if strict:
+            missing_keys = incompatible_keys.missing_keys
+            unexpected_keys = incompatible_keys.unexpected_keys
+
+            if len(missing_keys) == 0 and len(unexpected_keys) == 0 and len(mismatch_keys) == 0:
+                logger.info("All weights loaded successfully!")
+            else:
+                if len(missing_keys) != 0:
+                    # 只显示前10个缺失的键
+                    missing_display = missing_keys[:10]
+                    if len(missing_keys) > 10:
+                        missing_display.append(f"... and {len(missing_keys) - 10} more")
+                    logger.warning(f"Missing keys: {', '.join(missing_display)}\n")
+
+                if len(unexpected_keys) != 0:
+                    # 只显示前10个意外的键
+                    unexpected_display = unexpected_keys[:10]
+                    if len(unexpected_keys) > 10:
+                        unexpected_display.append(f"... and {len(unexpected_keys) - 10} more")
+                    logger.warning(f"Unexpected keys: {', '.join(unexpected_display)}\n")
+        else:
+            logger.info(f"Loaded {matched_keys} weights (non-strict mode)")
+
+    except Exception as e:
+        logger.error(f"Error loading state dict: {e}")
+
+        # 尝试非严格模式加载（如果当前不是非严格模式）
+        if strict:
+            logger.info("Trying non-strict loading...")
+            try:
+                incompatible_keys = model.load_state_dict(filtered_state_dict, strict=False)
+                logger.info(f"Loaded {matched_keys} weights with non-strict mode")
+            except Exception as e2:
+                logger.error(f"Non-strict loading also failed: {e2}")
+                raise e2
+        else:
+            raise e
+
+
+# 添加一个新的函数用于安全加载预训练权重
+def safe_load_pretrained(model, checkpoint_path, strict=False, logger=None):
+    """
+    安全加载预训练权重，处理各种兼容性问题
+    """
+    if logger is None:
+        logger = logging.getLogger(os.path.basename(os.getcwd()) + "." + __name__)
+
+    if not os.path.exists(checkpoint_path):
+        logger.error(f"Checkpoint file not found: {checkpoint_path}")
+        return model
+
+    logger.info(f"Loading pretrained weights from: {checkpoint_path}")
+
+    # 获取模型设备
+    model_device = next(model.parameters()).device if len(list(model.parameters())) > 0 else torch.device('cpu')
+
+    # 加载检查点
+    checkpoint = load_checkpoint(checkpoint_path, map_location="cpu")
+    if checkpoint is None:
+        logger.warning("Failed to load checkpoint. Training from scratch.")
+        return model
+
+    # 提取模型权重
+    if "model" in checkpoint:
+        state_dict = checkpoint["model"]
+        logger.info("Found 'model' key in checkpoint")
+    elif "state_dict" in checkpoint:
+        state_dict = checkpoint["state_dict"]
+        logger.info("Found 'state_dict' key in checkpoint")
     else:
-        logger.warning("The model and loaded state dict do not match exactly")
-        if len(missing_keys) != 0:
-            logger.warning(f"Missing keys: {', '.join(missing_keys)}\n")
-        if len(unexpected_keys) != 0:
-            logger.warning(f"Unexpected keys: {', '.join(unexpected_keys)}\n")
-        if len(mismatch_keys) != 0:
-            mismatch_tables = [["key name", "shape in model", "shape in state dict"]]
+        state_dict = checkpoint
+        logger.info("Using checkpoint directly as state_dict")
 
-            def format_shape(shape):
-                shape_str = "("
-                shape_str += ", ".join([str(i) for i in shape])
-                shape_str += ",)" if len(shape) == 1 else ")"
-                return shape_str
+    # 加载权重
+    load_state_dict(model, state_dict, strict=strict)
 
-            for key, (shape_model, shape_state_dict) in mismatch_keys.items():
-                mismatch_tables.append([key, format_shape(shape_model), format_shape(shape_state_dict)])
-            mismatch_tables = AsciiTable(mismatch_tables)
-            mismatch_tables.inner_footing_row_border = True
-            logger.warning(f"Size mismatch keys: {', '.join(mismatch_keys)}\n" + mismatch_tables.table + "\n")
+    return model
+
+
+# 修改现有的设备检查函数，添加NPU支持
+def get_device():
+    """获取当前可用的设备"""
+    if hasattr(torch, 'npu') and torch.npu.is_available():
+        return torch.device('npu')
+    elif torch.cuda.is_available():
+        return torch.device('cuda')
+    else:
+        return torch.device('cpu')
+
+
+# 修改SmoothedValue类中的设备处理
+def get_synchronize_device():
+    """获取用于同步的设备"""
+    if hasattr(torch, 'npu') and torch.npu.is_available():
+        return "npu"
+    else:
+        return "cuda" if torch.cuda.is_available() else "cpu"
