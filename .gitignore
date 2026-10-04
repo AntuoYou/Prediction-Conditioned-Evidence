@@ -172,3 +172,82 @@ visualize_dataset/
 /training_ap.png
 /training_loss.jpg
 /training_loss_and_ap.png
+
+# ===== Project-specific ignores =====
+
+# Model weights
+*.pt
+*.pth
+*.ckpt
+yolov8s.pt
+
+# Experiment results
+*.json
+*.log
+fusion_result.json
+exploration_only_v2_results.json
+
+# Training outputs
+runs/
+checkpoints/
+*.png
+*.jpg
+training_ap.png
+training_loss.jpg
+training_loss_and_ap.png
+
+# NPU cache
+kernel_meta/
+ge_check_op.json
+
+# Experiment result directories
+canvas_embedding_results/
+roi_padding_results/
+roi_scale_gradient_results/
+paper/
+pce_experiments/
+exper/
+
+# Backup directories
+models_backup_*/
+util_backup_*/
+*.bak
+
+# Dataset directories
+data/
+datasets/
+app/data/
+app/datasets/
+
+# Temp files
+--checkpoint
+--coco-path
+--model-config
+*.swp
+.DS_Store
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+inference.ipynb
+
+# Misc
+setup_and_run_all.sh
+fix_and_eval.py
+diagnose_eval.py
+test_npu_batch_nms.py
+eval_c_group.py
+
+# ===== Root-level experiment scripts (moved to experiments/) =====
+canvas_embedding_experiment.py
+roi_padding_experiment.py
+roi_scale_gradient_experiment.py
+roi_scale_gradient_low.py
+run_expansion_ablation.py
+
+
+# ===== Additional ignores =====
+*.bak
+experiments/ckpt
+experiments/if
+experiments/import
+experiments/pce_results/

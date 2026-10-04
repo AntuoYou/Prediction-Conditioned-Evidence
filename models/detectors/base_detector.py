@@ -24,7 +24,7 @@ class EvalResize(nn.Module):
         min_size: int,
         max_size: Optional[int] = None,
         interpolation: Union[InterpolationMode, int] = InterpolationMode.BILINEAR,
-        antialias: Optional[Union[str, bool]] = "warn",
+        antialias: Optional[Union[str, bool]] = False,
     ):
         super().__init__()
         assert isinstance(min_size, int) and isinstance(max_size, int)
@@ -67,7 +67,7 @@ class BaseDetector(nn.Module):
         super().__init__()
         size = [s for s in (min_size, max_size) if isinstance(s, (int, float))]
         if len(size) != 0:
-            eval_transform = [EvalResize(min(size), max(size), antialias=True)]
+            eval_transform = [EvalResize(min(size), max(size), antialias=False)]
         else:
             eval_transform = []
         eval_transform.append(T.ConvertImageDtype(torch.float))
