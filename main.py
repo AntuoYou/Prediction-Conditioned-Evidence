@@ -137,6 +137,19 @@ def train():
 
     # log the configerations
     logger = get_logger(os.path.basename(os.getcwd()) + "." + __name__)
+    # [mixed-ft-freeze] AFO 混合微调：按前缀冻结参数
+    _fp = getattr(cfg, "freeze_prefixes", None)
+    if _fp:
+        for _n, _p in model.named_parameters():
+            if _n.startswith(tuple(_fp)):
+                _p.requires_grad = False
+        _fz = [n for n, p in model.named_parameters() if not p.requires_grad]
+        _tr = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        _tt = sum(p.numel() for p in model.parameters())
+        logger.info(f"[mixed-ft-freeze] frozen {len(_fz)} tensors, trainable {_tr:,}/{_tt:,} ({_tr/_tt:.1%})")
+        logger.info(f"[mixed-ft-freeze] frozen sample: {_fz[:4]}")
+        logger.info(f"[mixed-ft-freeze] trainable sample: {[n for n,p in model.named_parameters() if p.requires_grad][:6]}")
+
     # prepare for distributed training
     model, optimizer, train_loader, test_loader, lr_scheduler = accelerator.prepare(
         model, optimizer, train_loader, test_loader, lr_scheduler
