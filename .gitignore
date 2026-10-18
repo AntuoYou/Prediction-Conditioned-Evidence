@@ -251,3 +251,15 @@ experiments/ckpt
 experiments/if
 experiments/import
 experiments/pce_results/
+
+# ===== protocol_v2 补充实验产物（勿提交）=====
+experiments/runs/
+experiments/edge_cache/
+experiments/viz_out/
+experiments/viz_out_r50/
+*.bak_*
+boot.py
+boot2.py
+patch_b3.py
+verify_5.sh
+verify_final.sh
