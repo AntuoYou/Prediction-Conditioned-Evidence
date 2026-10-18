@@ -77,6 +77,7 @@ class HungarianMatcher(nn.Module):
 
         # single assignment
         if not self.mixed_match:
+            c = torch.nan_to_num(c, nan=1e6, posinf=1e6, neginf=-1e6)  # [NPU-GUARD]
             indices = linear_sum_assignment(c.cpu())
             return torch.as_tensor(indices[0]), torch.as_tensor(indices[1])
 
