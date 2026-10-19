@@ -165,7 +165,7 @@ python3 seadronesse_supplement_queue/run_queue.py \
 
 ### 一键监控当前两项后台任务
 
-`monitor_supplements.py` 只读取文件和 `/proc` 进程信息，不会停止或启动任务。它显示 B3 87 KB 完成验收、B6 方案内最高简单 ROI 设置的全量进度/验收（实际载荷未匹配 311 KB）以及 selector re-audit 的 CSV 行数和 summary 状态。
+`monitor_supplements.py` 只读取文件和 `/proc` 进程信息，不会停止或启动任务。它显示 B3/B6 全量推理验收、selector re-audit，以及 B3 独立评估和历史 run 产物审计状态。
 
 ```bash
 python3 seadronesse_supplement_queue/monitor_supplements.py \
