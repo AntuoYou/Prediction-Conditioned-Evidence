@@ -195,9 +195,16 @@ def monitor_offline_checks(root: Path) -> tuple[str, str, bool]:
     audit = read_json(audit_path)
     audit_pids = process_matches(("audit_run_outputs.py", "run_audit_latest.json"))
     if audit is not None:
+        review = [
+            item.get("run_id", "unknown")
+            for item in audit.get("runs", [])
+            if item.get("status") != "structurally_consistent"
+        ]
+        label = "PASS" if not audit.get("n_needs_review") else "REPORT READY / REVIEW REQUIRED"
         audit_line = (
-            f"Historical run audit: COMPLETE | runs={audit.get('n_runs')} "
-            f"consistent={audit.get('n_consistent')} needs_review={audit.get('n_needs_review')}"
+            f"Historical run audit: {label} | runs={audit.get('n_runs')} "
+            f"consistent={audit.get('n_consistent')} needs_review={audit.get('n_needs_review')} "
+            f"ids={review}"
         )
     elif audit_pids:
         audit_line = f"Historical run audit: RUNNING | pid={audit_pids}"
