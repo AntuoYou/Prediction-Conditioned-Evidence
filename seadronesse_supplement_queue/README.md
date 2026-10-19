@@ -163,7 +163,24 @@ python3 seadronesse_supplement_queue/run_queue.py \
 
 ## 文件
 
+### 一键监控当前两项后台任务
+
+`monitor_supplements.py` 只读取文件和 `/proc` 进程信息，不会停止或启动任务。它同时显示 B3 87 KB 全量推理进度/完成验收，以及新版 selector re-audit 的 CSV 行数和 summary 状态；B6 311 KB 会标记为暂缓，因为当前校准未匹配目标，最近候选也超出方案参数范围。
+
+```bash
+python3 seadronesse_supplement_queue/monitor_supplements.py \
+  --repo-root /app/Salience-DETR
+```
+
+每 30 秒刷新，两个后台进程都结束后自动退出：
+
+```bash
+python3 -u seadronesse_supplement_queue/monitor_supplements.py \
+  --repo-root /app/Salience-DETR --watch 30
+```
+
 - `run_queue.py`：JSON 命令队列，支持独立服务槽、并发上限、逐任务日志。
+- `monitor_supplements.py`：一键查看 B3 全量推理和选择器复审进度，并对 B3 产物做基本验收。
 - `audit_run_outputs.py`：对现有运行目录做结构与包字节核查。
 - `audit_selectors.py`：对当前代码做候选范围、选择数量、重复与边界诊断。
 - `calibrate_resize_bytes.py`：在抽样图像上做实际包字节校准，保留候选表。
