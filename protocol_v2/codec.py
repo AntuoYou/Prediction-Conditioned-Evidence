@@ -124,8 +124,13 @@ def encode_context_only(rgb, image_id, scale=8, q=95):
     return _pack([("manifest.json", mj), ("background.jpg", jpg)])
 
 
-def encode_regional(rgb, image_id, rois, scale=8, q_bg=95, q_roi=95):
-    """A3/A5: 低清背景 + 每个 ROI 的高清裁剪，按 rois 顺序贴回"""
+def encode_regional(rgb, image_id, rois, scale=8, q_bg=95, q_roi=95,
+                    roi_scale=1.0):
+    """A3/A5/B3/B6: low-resolution background plus JPEG ROI crops.
+
+    ``roi_scale`` downsamples each crop isotropically before JPEG encoding;
+    the packet-only decoder restores it to the recorded ROI dimensions.
+    """
     h, w = rgb.shape[:2]
     bg_jpg = _jpeg(_lowres(rgb, scale), q_bg)
 
@@ -139,6 +144,15 @@ def encode_regional(rgb, image_id, rois, scale=8, q_bg=95, q_roi=95):
         if x2 <= x1 or y2 <= y1:
             continue
         crop = rgb[y1:y2, x1:x2]
+        if float(roi_scale) <= 0 or float(roi_scale) > 1:
+            raise ValueError("roi_scale must be in (0, 1]")
+        if float(roi_scale) < 1.0:
+            crop = cv2.resize(
+                crop,
+                (max(1, int(round(crop.shape[1] * float(roi_scale)))),
+                 max(1, int(round(crop.shape[0] * float(roi_scale))))),
+                interpolation=cv2.INTER_AREA,
+            )
         jpg = _jpeg(crop, q_roi)
         name = "crop_%03d.jpg" % len(crops)
         crops.append((name, jpg))
@@ -149,6 +163,7 @@ def encode_regional(rgb, image_id, rois, scale=8, q_bg=95, q_roi=95):
         "v": VERSION, "mode": MODE_REGION, "image_id": int(image_id),
         "w": int(w), "h": int(h), "scale": int(scale),
         "q_bg": int(q_bg), "q_roi": int(q_roi),
+        "roi_scale": float(roi_scale),
         "rois": rois_clean,            # 顺序即覆盖顺序
         "n_roi": len(rois_clean),
         "parts": parts,
@@ -238,9 +253,12 @@ def decode(packet: bytes):
         canvas = cv2.resize(small, (W, H), interpolation=cv2.INTER_LINEAR)
         for i, (x1, y1, x2, y2) in enumerate(man["rois"]):
             crop = _unjpeg(z.read("crop_%03d.jpg" % i))
-            ch, cw = min(y2 - y1, crop.shape[0]), min(x2 - x1, crop.shape[1])
-            if ch > 0 and cw > 0:
-                canvas[y1:y1 + ch, x1:x1 + cw] = crop[:ch, :cw]
+            target_w, target_h = x2 - x1, y2 - y1
+            if target_w > 0 and target_h > 0:
+                if crop.shape[1] != target_w or crop.shape[0] != target_h:
+                    crop = cv2.resize(crop, (target_w, target_h),
+                                      interpolation=cv2.INTER_LINEAR)
+                canvas[y1:y2, x1:x2] = crop[:target_h, :target_w]
 
     elif mode == MODE_PACKED:
         small = _unjpeg(z.read("background.jpg"))

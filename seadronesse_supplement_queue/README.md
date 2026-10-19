@@ -172,3 +172,17 @@ python3 seadronesse_supplement_queue/run_queue.py \
 - `edge_only_predictions.py`：将 edge cache 按显式类别映射转换成 COCO 预测。
 - `queue.json`：剩余工作队列模板，推理项默认关闭。
 - `install_into_repo.ps1`：将工具包复制到本地仓库 checkout，不会自动提交或推送。
+- `calibrate_roi_bytes.py`：只按完整 packet 字节校准 B3/B6 简单 ROI 参数，不读取目标标注、不调用云端。
+- `queue_next.json.template`：A4 网格随机三种 seed 与 B3/B6 的八卡队列模板；校准和服务映射核对前所有任务均关闭。
+
+### 本轮新增任务
+
+旧 A4 是随机 16×16 patch，不能代替方案定义的 6×10 网格随机选 8 格。`protocol_v2.run_a --config A4_grid --seed N` 会为每帧按 `seed + image_id * 1000003` 派生随机流，并将 seed 与 row-major cell ID 写入 `per_image.csv`。建议使用 11、23、37 三个预先固定的 run seed，不拼接或挑选最高分。
+
+简单 ROI 使用 `roi_scale` 对 ROI crop 做等比例降采样，包内 manifest 记录参数，服务端仅凭 packet 解码并恢复 ROI 原尺寸。先运行字节校准：
+
+```bash
+python3 -u seadronesse_supplement_queue/calibrate_roi_bytes.py --repo-root /app/Salience-DETR --gt /app/data/seadronessee/compressed_version/annotations/instances_val2017.json --img-dir /app/data/seadronessee/compressed_version/val2017 --edge /app/Salience-DETR/experiments/edge_cache/edge_best_conf001.jsonl --output /app/Salience-DETR/experiments/supplement_audit/roi/roi_candidates.csv --targets-kb 87,311
+```
+
+候选表只用于选字节可行配置；若原开发 200 帧清单不可恢复，不根据验证集 AP 选参数。把 `queue_next.json.template` 复制到服务器为 `queue_next.json`，审阅候选并填入 B3/B6 参数，再重新核验端口绑定的物理 NPU、启用任务。

@@ -56,21 +56,34 @@ CONFIGS = {
            "mode": "full", "q": 95},
     "A2": {"desc": "Context only, bg 1/8, JPEG Q95",
            "mode": "ctx", "scale": 8, "q": 95},
+    "A2_s5": {"desc": "Context only, bg 1/5, JPEG Q95",
+           "mode": "ctx", "scale": 5, "q": 95},
+    "A2_s3": {"desc": "Context only, bg 1/3, JPEG Q95",
+           "mode": "ctx", "scale": 3, "q": 95},
+    "A2_s2q86": {"desc": "Context only, bg 1/2, JPEG Q86",
+           "mode": "ctx", "scale": 2, "q": 86},
     "A3": {"desc": "Support only, eps=0.1 (regional)",
            "mode": "regional", "expand": 0.1, "q_roi": 80, **_BG},
     "A4": {"desc": "Support eps=0.1 + random 8 (regional)",
            "mode": "regional", "expand": 0.1, "random": 8, "q_roi": 95, **_BG},
+    "A4_grid": {"desc": "Support eps=0.1 + 8 random 6x10 grid cells (regional)",
+           "mode": "regional", "expand": 0.1, "random_grid": 8,
+           "grid": (6, 10), "q_roi": 95, **_BG},
     "A5": {"desc": "Support eps=0.1 + exploration 8 grid cells (regional)",
            "mode": "regional", "expand": 0.1, "explore": 4, "grid": (6, 10),
            "q_roi": 95, **_BG},
     "A6": {"desc": "Legacy uniform 25% (packed)",
-           "mode": "packed", "expand": 0.1, "ratio": 1.00, "select": "uniform", **_TOK},
+           "mode": "packed", "expand": 0.1, "explore": 8, "grid": (6, 10), "ratio": 0.25, "select": "uniform", **_TOK},
     "A7": {"desc": "Prediction-guided 25% (packed)",
-           "mode": "packed", "expand": 0.1, "ratio": 1.00, "select": "evidence", **_TOK},
+           "mode": "packed", "expand": 0.1, "explore": 8, "grid": (6, 10), "ratio": 0.25, "select": "evidence", **_TOK},
     "A8": {"desc": "Spatial uniform 25% (packed)",
-           "mode": "packed", "expand": 0.1, "ratio": 1.00, "select": "spatial", **_TOK},
+           "mode": "packed", "expand": 0.1, "explore": 8, "grid": (6, 10), "ratio": 0.25, "select": "spatial", **_TOK},
     "B3": {"desc": "Support only, no merge (regional)",
-           "mode": "regional", "expand": 0.1, "merge": False, "q_roi": 95, **_BG},
+           "mode": "regional", "expand": 0.1, "roi_scale": 1.0,
+           "merge": False, "q_roi": 95, **_BG},
+    "B6": {"desc": "Support only, no merge, high budget (regional)",
+           "mode": "regional", "expand": 0.1, "roi_scale": 1.0,
+           "merge": False, "q_roi": 95, **_BG},
 }
 
 
@@ -78,15 +91,16 @@ def need_edge(cfg):
     return cfg["mode"] in ("regional", "packed")
 
 
-def build_packet(cfg, rgb, iid, edge):
-    """返回 (packet_bytes, n_unit)   n_unit = ROI 数或 patch 数"""
+def build_packet(cfg, rgb, iid, edge, seed=20261018):
+    """返回 packet、单元数和可复现的逐帧选择记录。"""
     h, w = rgb.shape[:2]
     mode = cfg["mode"]
+    trace = {}
 
     if mode == "full":
-        return codec.encode_full_frame(rgb, iid, q=cfg["q"]), 0
+        return codec.encode_full_frame(rgb, iid, q=cfg["q"]), 0, trace
     if mode == "ctx":
-        return codec.encode_context_only(rgb, iid, scale=cfg["scale"], q=cfg["q"]), 0
+        return codec.encode_context_only(rgb, iid, scale=cfg["scale"], q=cfg["q"]), 0, trace
 
     rec = edge.get(iid)
     if rec is None:
@@ -110,16 +124,30 @@ def build_packet(cfg, rgb, iid, edge):
         if cfg.get("random"):
             rois += [(x, y, x + sel.PATCH, y + sel.PATCH)
                      for x, y in sel.random_patches(sup, w, h, n=cfg["random"])]
+        if cfg.get("random_grid"):
+            # Derive a deterministic but frame-specific stream from the run seed.
+            frame_seed = (int(seed) + int(iid) * 1000003) % (2 ** 32)
+            extra, cell_ids = sel.random_grid_rois(
+                w, h, n=cfg["random_grid"],
+                grid=cfg.get("grid", (6, 10)), seed=frame_seed)
+            rois += extra
+            trace["grid_cell_ids"] = cell_ids
+            trace["frame_seed"] = frame_seed
         pkt = codec.encode_regional(rgb, iid, rois, scale=cfg["scale"],
-                                    q_bg=cfg["q_bg"], q_roi=cfg["q_roi"])
-        return pkt, len(rois)
+                                    q_bg=cfg["q_bg"], q_roi=cfg["q_roi"],
+                                    roi_scale=cfg.get("roi_scale", 1.0))
+        return pkt, len(rois), trace
 
     if mode == "packed":
-        patches = sel.select_patches(rgb, sup, cfg["ratio"], cfg["select"], ps=sel.PATCH)
+        cand = list(sup)
+        if cfg.get("explore"):
+            cand += sel.exploration_rois(sup, w, h, n=cfg["explore"],
+                                         grid=cfg.get("grid", (6, 10)))
+        patches = sel.select_patches(rgb, cand, cfg["ratio"], cfg["select"], ps=sel.PATCH)
         pkt = codec.encode_packed(rgb, iid, patches, scale=cfg["scale"],
                                   q_bg=cfg["q_bg"], q_atlas=cfg["q_atlas"],
                                   patch_size=sel.PATCH)
-        return pkt, len(patches)
+        return pkt, len(patches), trace
 
     raise NotImplementedError("mode %s" % mode)
 
@@ -160,7 +188,8 @@ def coco_eval(gt_path, pred_path, img_ids):
     }
 
 
-COLS = ["image_id", "file", "packet_bytes", "overhead", "n_det", "n_unit", "ms", "status"]
+COLS = ["image_id", "file", "packet_bytes", "overhead", "n_det", "n_unit",
+        "ms", "status", "grid_cell_ids", "frame_seed"]
 
 
 def main():
@@ -175,12 +204,29 @@ def main():
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--conf", type=float, default=0.05)
     ap.add_argument("--run-id", default="")
+    ap.add_argument("--seed", type=int, default=20261018,
+                    help="Run seed for A4_grid; each frame gets a deterministic derived seed.")
+    ap.add_argument("--expand", type=float, default=None,
+                    help="Override ROI expansion for B3/B6 after byte calibration.")
+    ap.add_argument("--roi-scale", type=float, default=None,
+                    help="Override isotropic ROI downscale for B3/B6 after byte calibration.")
+    ap.add_argument("--q-roi", type=int, default=None,
+                    help="Override ROI JPEG quality for B3/B6 after byte calibration.")
     args = ap.parse_args()
 
-    cfg = CONFIGS[args.config]
+    cfg = dict(CONFIGS[args.config])
+    if args.config in ("B3", "B6"):
+        if args.expand is not None:
+            cfg["expand"] = args.expand
+        if args.roi_scale is not None:
+            cfg["roi_scale"] = args.roi_scale
+        if args.q_roi is not None:
+            cfg["q_roi"] = args.q_roi
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     run_id = args.run_id or ("%s_%s" % (args.config, ts))
     out = os.path.join(RUNS, run_id)
+    if os.path.isdir(out) and os.listdir(out) and not args.resume:
+        sys.exit("[FATAL] 输出目录已存在且非空；请换 run_id 或显式检查后用 --resume: %s" % out)
     os.makedirs(out, exist_ok=True)
 
     print("[run] %s  %s" % (run_id, cfg["desc"]))
@@ -234,7 +280,7 @@ def main():
                 raise RuntimeError("读图失败: %s" % path)
             rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
-            packet, n_unit = build_packet(cfg, rgb, iid, edge)
+            packet, n_unit, trace = build_packet(cfg, rgb, iid, edge, seed=args.seed)
             sha = codec.sha256(packet)
             ps = codec.part_sum(packet)
             if ps["payload"] + ps["overhead"] != ps["total"]:
@@ -253,7 +299,9 @@ def main():
             rows.append({"image_id": iid, "file": im["file_name"],
                          "packet_bytes": ps["total"], "overhead": ps["overhead"],
                          "n_det": len(dets), "n_unit": n_unit,
-                         "ms": resp.get("inference_time_ms", 0), "status": "ok"})
+                         "ms": resp.get("inference_time_ms", 0), "status": "ok",
+                         "grid_cell_ids": json.dumps(trace.get("grid_cell_ids", [])),
+                         "frame_seed": trace.get("frame_seed", "")})
             idx_rows.append({"image_id": iid, "total": ps["total"],
                              "payload": ps["payload"], "overhead": ps["overhead"],
                              "detail": json.dumps(ps["parts"], separators=(",", ":"))})
@@ -262,7 +310,8 @@ def main():
                           "error": repr(exc)})
             rows.append({"image_id": iid, "file": im["file_name"],
                          "packet_bytes": 0, "overhead": 0, "n_det": -1, "n_unit": 0,
-                         "ms": 0, "status": "failed"})
+                         "ms": 0, "status": "failed", "grid_cell_ids": "[]",
+                         "frame_seed": ""})
             print("  [%d/%d] %s FAILED %r" % (k, len(todo), im["file_name"], exc))
             traceback.print_exc()
 
@@ -315,6 +364,7 @@ def main():
                  min(sizes) / 1024, max(sizes) / 1024))
 
     summary = {"run_id": run_id, "config": args.config, "cfg": cfg,
+               "seed": args.seed if args.config == "A4_grid" else None,
                "n_ok": len(ok_rows), "n_failed": len(fails),
                "n_pred": len(preds)}
     if sizes:
@@ -343,6 +393,7 @@ def main():
         json.dump(summary, f, indent=2, ensure_ascii=False)
     with open(os.path.join(out, "run_manifest.json"), "w") as f:
         json.dump({"run_id": run_id, "config": args.config, "cfg": cfg,
+                   "seed": args.seed if args.config == "A4_grid" else None,
                    "gt": args.gt, "img_dir": args.img_dir,
                    "edge_cache": args.edge if need_edge(cfg) else None,
                    "edge_conf": args.edge_conf,

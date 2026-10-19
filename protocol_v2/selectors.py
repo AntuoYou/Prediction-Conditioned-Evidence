@@ -185,6 +185,33 @@ def random_patches(rois, W, H, n=N_EXPLORE, ps=PATCH, seed=RANDOM_SEED):
     return [cand[int(i)] for i in sorted(idx)]
 
 
+def random_grid_rois(W, H, n=8, grid=(6, 10), seed=RANDOM_SEED):
+    """Uniformly sample n whole cells from a fixed image grid.
+
+    Cell IDs are row-major (row * n_cols + col). The caller records the IDs and
+    seed so a random-grid comparison can be reconstructed exactly. Sampling is
+    without replacement from all grid cells, as specified by the experiment
+    plan; overlap with support ROIs is retained as part of the random baseline.
+    """
+    rows, cols = int(grid[0]), int(grid[1])
+    if rows <= 0 or cols <= 0 or n <= 0:
+        return [], []
+    total = rows * cols
+    k = min(int(n), total)
+    rng = np.random.default_rng(int(seed))
+    ids = sorted(int(i) for i in rng.choice(total, size=k, replace=False))
+    rois = []
+    for cell_id in ids:
+        row, col = divmod(cell_id, cols)
+        x1 = int(round(col * W / float(cols)))
+        x2 = int(round((col + 1) * W / float(cols)))
+        y1 = int(round(row * H / float(rows)))
+        y2 = int(round((row + 1) * H / float(rows)))
+        if x2 > x1 and y2 > y1:
+            rois.append((x1, y1, x2, y2))
+    return rois, ids
+
+
 # --------------------------------------------------------------------------
 # patch 选择（A6 / A7 / A8）
 # --------------------------------------------------------------------------

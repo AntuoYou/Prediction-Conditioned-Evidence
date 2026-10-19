@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "description": "Next SeaDronesSee jobs: corrected A4 grid-random seeds and byte-calibrated simple-ROI B3/B6. Keep disabled until calibration is reviewed and the eight service-to-NPU mappings are rechecked.",
+  "slots": [
+    {"name": "npu0", "device": "0", "url": "http://127.0.0.1:8002/detect_packet", "health_url": "http://127.0.0.1:8002/health"},
+    {"name": "npu1", "device": "1", "url": "http://127.0.0.1:8003/detect_packet", "health_url": "http://127.0.0.1:8003/health"},
+    {"name": "npu2", "device": "2", "url": "http://127.0.0.1:8004/detect_packet", "health_url": "http://127.0.0.1:8004/health"},
+    {"name": "npu3", "device": "3", "url": "http://127.0.0.1:8005/detect_packet", "health_url": "http://127.0.0.1:8005/health"},
+    {"name": "npu4", "device": "4", "url": "http://127.0.0.1:8006/detect_packet", "health_url": "http://127.0.0.1:8006/health"},
+    {"name": "npu5", "device": "5", "url": "http://127.0.0.1:8007/detect_packet", "health_url": "http://127.0.0.1:8007/health"},
+    {"name": "npu6", "device": "6", "url": "http://127.0.0.1:8008/detect_packet", "health_url": "http://127.0.0.1:8008/health"},
+    {"name": "npu7", "device": "7", "url": "http://127.0.0.1:8009/detect_packet", "health_url": "http://127.0.0.1:8009/health"}
+  ],
+  "tasks": [
+    {"id": "A4_grid_seed11", "run_id": "A4_grid_seed11_v2", "phase": "A4_random_grid", "enabled": false, "command": ["python3", "-u", "-m", "protocol_v2.run_a", "--config", "A4_grid", "--seed", "11", "--url", "{url}", "--run-id", "{run_id}"]},
+    {"id": "A4_grid_seed23", "run_id": "A4_grid_seed23_v2", "phase": "A4_random_grid", "enabled": false, "command": ["python3", "-u", "-m", "protocol_v2.run_a", "--config", "A4_grid", "--seed", "23", "--url", "{url}", "--run-id", "{run_id}"]},
+    {"id": "A4_grid_seed37", "run_id": "A4_grid_seed37_v2", "phase": "A4_random_grid", "enabled": false, "command": ["python3", "-u", "-m", "protocol_v2.run_a", "--config", "A4_grid", "--seed", "37", "--url", "{url}", "--run-id", "{run_id}"]},
+    {"id": "B3_simple_roi_87kb", "run_id": "B3_simple_roi_87kb_v2", "phase": "simple_roi_low", "enabled": false, "requires_byte_calibration": true, "command": ["python3", "-u", "-m", "protocol_v2.run_a", "--config", "B3", "--expand", "{expand}", "--roi-scale", "{roi_scale}", "--q-roi", "{q_roi}", "--url", "{url}", "--run-id", "{run_id}"], "params": {"expand": "", "roi_scale": "", "q_roi": ""}},
+    {"id": "B6_simple_roi_311kb", "run_id": "B6_simple_roi_311kb_v2", "phase": "simple_roi_high", "enabled": false, "requires_byte_calibration": true, "command": ["python3", "-u", "-m", "protocol_v2.run_a", "--config", "B6", "--expand", "{expand}", "--roi-scale", "{roi_scale}", "--q-roi", "{q_roi}", "--url", "{url}", "--run-id", "{run_id}"], "params": {"expand": "", "roi_scale": "", "q_roi": ""}}
+  ]
+}
