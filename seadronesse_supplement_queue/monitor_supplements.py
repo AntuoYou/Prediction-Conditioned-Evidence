@@ -176,21 +176,7 @@ def monitor_selector(root: Path) -> str:
     return f"Selector re-audit: INCOMPLETE | rows={rows}/{expected}; no matching process or summary"
 
 
-def monitor_offline_checks(root: Path) -> tuple[str, str, bool]:
-    eval_dir = root / "experiments/supplement_audit/next/eval_B3_independent"
-    eval_summary_path = eval_dir / "eval_summary.json"
-    eval_summary = read_json(eval_summary_path)
-    eval_pids = process_matches(("evaluate_predictions.py", "B3_roi87_v2/predictions_coco.json"))
-    if eval_summary is not None:
-        eval_line = (
-            f"B3 independent COCO eval: COMPLETE | AP={eval_summary.get('AP')} "
-            f"AP_S={eval_summary.get('AP_S')} n_images={eval_summary.get('n_images')}"
-        )
-    elif eval_pids:
-        eval_line = f"B3 independent COCO eval: RUNNING | pid={eval_pids}"
-    else:
-        eval_line = "B3 independent COCO eval: NOT STARTED"
-
+def monitor_history_audit(root: Path) -> tuple[str, bool]:
     audit_path = root / "experiments/supplement_audit/next/acceptance/run_audit_latest.json"
     audit = read_json(audit_path)
     audit_pids = process_matches(("audit_run_outputs.py", "run_audit_latest.json"))
@@ -210,7 +196,7 @@ def monitor_offline_checks(root: Path) -> tuple[str, str, bool]:
         audit_line = f"Historical run audit: RUNNING | pid={audit_pids}"
     else:
         audit_line = "Historical run audit: NOT STARTED"
-    return eval_line, audit_line, bool(eval_pids or audit_pids)
+    return audit_line, bool(audit_pids)
 
 
 def report(root: Path) -> bool:
@@ -219,13 +205,12 @@ def report(root: Path) -> bool:
     print(monitor_b3(root))
     print(monitor_b6(root))
     print(monitor_selector(root))
-    eval_line, audit_line, active_offline = monitor_offline_checks(root)
-    print(eval_line)
+    audit_line, active_audit = monitor_history_audit(root)
     print(audit_line)
     active_b3 = bool(process_matches(("protocol_v2.run_a", "--run-id", "B3_roi87_v2")))
     active_b6 = bool(process_matches(("protocol_v2.run_a", "--run-id", "B6_roi_max_allowed_q95_unmatched_v2")))
     active_selector = bool(process_matches(("audit_selectors.py", "selector_reaudit")))
-    return active_b3 or active_b6 or active_selector or active_offline
+    return active_b3 or active_b6 or active_selector or active_audit
 
 
 def main() -> int:
