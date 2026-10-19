@@ -99,6 +99,53 @@ def monitor_b3(root: Path) -> str:
     return "B3 87KB: NOT STARTED or stopped without complete run outputs"
 
 
+def monitor_b6(root: Path) -> str:
+    run_id = "B6_roi_max_allowed_q95_unmatched_v2"
+    run = root / "experiments/runs" / run_id
+    log = root / "experiments/supplement_audit/next/roi/B6_full.log"
+    summary = read_json(run / "summary.json")
+    per_image = run / "per_image.csv"
+    pids = process_matches(("protocol_v2.run_a", "--run-id", run_id))
+
+    if summary is not None and per_image.is_file():
+        with per_image.open("r", encoding="utf-8-sig", newline="") as stream:
+            rows = list(csv.DictReader(stream))
+        ids = [row.get("image_id", "") for row in rows]
+        ok = sum(row.get("status", "").lower() == "ok" for row in rows)
+        failed = len(rows) - ok
+        byte_mismatches = "n/a"
+        index_path = run / "packet_index.csv"
+        if index_path.is_file():
+            with index_path.open("r", encoding="utf-8-sig", newline="") as stream:
+                index = {row.get("image_id", ""): row for row in csv.DictReader(stream)}
+            byte_mismatches = sum(
+                row.get("image_id") not in index
+                or not row.get("packet_bytes", "").isdigit()
+                or not index[row["image_id"]].get("total", "").isdigit()
+                or int(row["packet_bytes"]) != int(index[row["image_id"]]["total"])
+                for row in rows
+            )
+        passed = len(rows) == 1547 and len(set(ids)) == 1547 and ok == 1547 and failed == 0
+        if byte_mismatches != "n/a":
+            passed = passed and byte_mismatches == 0
+        return (
+            f"B6 unmatched: {'PASS' if passed else 'CHECK'} | rows={len(rows)} "
+            f"unique={len(set(ids))} ok={ok} failed={failed} "
+            f"byte_mismatch={byte_mismatches} AP={summary.get('AP')} "
+            f"meanKB={summary.get('payload_kb_mean')} (not a 311KB match)"
+        )
+
+    progress = last_progress(log)
+    if pids or progress:
+        if progress:
+            done, total, eta = progress
+            pct = 100.0 * done / total if total else 0.0
+            eta_text = f", ETA {eta}" if eta else ""
+            return f"B6 unmatched: RUNNING {done}/{total} ({pct:.1f}%){eta_text}; pid={pids or 'unknown'}"
+        return f"B6 unmatched: RUNNING; pid={pids}"
+    return "B6 unmatched: NOT STARTED or stopped without complete run outputs"
+
+
 def monitor_selector(root: Path) -> str:
     out = root / "experiments/supplement_audit/next/selector_reaudit"
     csv_path = out / "selector_audit.csv"
@@ -133,11 +180,12 @@ def report(root: Path) -> bool:
     now = time.strftime("%Y-%m-%d %H:%M:%S")
     print(f"===== SeaDronesSee supplement monitor {now} =====")
     print(monitor_b3(root))
+    print(monitor_b6(root))
     print(monitor_selector(root))
-    print("B6 311KB: NOT STARTED; latest calibration did not match target and used out-of-plan expansion.")
     active_b3 = bool(process_matches(("protocol_v2.run_a", "--run-id", "B3_roi87_v2")))
+    active_b6 = bool(process_matches(("protocol_v2.run_a", "--run-id", "B6_roi_max_allowed_q95_unmatched_v2")))
     active_selector = bool(process_matches(("audit_selectors.py", "selector_reaudit")))
-    return active_b3 or active_selector
+    return active_b3 or active_b6 or active_selector
 
 
 def main() -> int:
