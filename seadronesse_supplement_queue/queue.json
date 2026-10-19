@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "description": "SeaDronesSee remaining protocol-v2 work. Disabled jobs require source/config review before execution.",
+  "slots": [
+    {
+      "name": "cpu-audit",
+      "device": "",
+      "url": "",
+      "health_url": ""
+    }
+  ],
+  "tasks": [
+    {
+      "id": "audit_existing_runs",
+      "run_id": "audit_existing_runs",
+      "phase": "artifact_audit",
+      "enabled": true,
+      "command": [
+        "python3",
+        "{repo}/seadronesse_supplement_queue/audit_run_outputs.py",
+        "--root",
+        "{repo}/experiments/runs",
+        "--output",
+        "{task_dir}/audit.json",
+        "--check-packet-files"
+      ],
+      "env": {}
+    },
+    {
+      "id": "calibrate_resize_packet_bytes",
+      "run_id": "calibrate_resize_packet_bytes",
+      "phase": "resize_byte_calibration",
+      "enabled": false,
+      "command": [
+        "python3",
+        "{repo}/seadronesse_supplement_queue/calibrate_resize_bytes.py",
+        "--repo-root",
+        "{repo}",
+        "--image-dir",
+        "{image_dir}",
+        "--output",
+        "{task_dir}/resize_candidates.csv",
+        "--targets-kb",
+        "54,314,360"
+      ],
+      "params": {
+        "image_dir": "/app/data/seadronessee/compressed_version/val2017"
+      },
+      "env": {}
+    },
+    {
+      "id": "resize_match_54kb",
+      "run_id": "resize_match_54kb_v2",
+      "phase": "resize_jpeg_low",
+      "enabled": false,
+      "requires_source_reconciliation": true,
+      "command": [
+        "python3",
+        "{repo}/seadronesse_supplement_queue/resize_jpeg_runner.py",
+        "--repo-root",
+        "{repo}",
+        "--scale",
+        "{scale}",
+        "--quality",
+        "{quality}",
+        "--url",
+        "{url}",
+        "--run-id",
+        "{run_id}"
+      ],
+      "params": {"scale": "", "quality": ""},
+      "env": {}
+    },
+    {
+      "id": "resize_match_314kb",
+      "run_id": "resize_match_314kb_v2",
+      "phase": "resize_jpeg_mid",
+      "enabled": false,
+      "requires_source_reconciliation": true,
+      "command": [
+        "python3",
+        "{repo}/seadronesse_supplement_queue/resize_jpeg_runner.py",
+        "--repo-root",
+        "{repo}",
+        "--scale",
+        "{scale}",
+        "--quality",
+        "{quality}",
+        "--url",
+        "{url}",
+        "--run-id",
+        "{run_id}"
+      ],
+      "params": {"scale": "", "quality": ""},
+      "env": {}
+    },
+    {
+      "id": "resize_match_360kb",
+      "run_id": "resize_match_360kb_v2",
+      "phase": "resize_jpeg_high",
+      "enabled": false,
+      "requires_source_reconciliation": true,
+      "command": [
+        "python3",
+        "{repo}/seadronesse_supplement_queue/resize_jpeg_runner.py",
+        "--repo-root",
+        "{repo}",
+        "--scale",
+        "{scale}",
+        "--quality",
+        "{quality}",
+        "--url",
+        "{url}",
+        "--run-id",
+        "{run_id}"
+      ],
+      "params": {"scale": "", "quality": ""},
+      "env": {}
+    }
+  ]
+}
