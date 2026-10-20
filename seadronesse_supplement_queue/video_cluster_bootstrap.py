@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Paired video-cluster bootstrap for saved SeaDronesSee COCO predictions.
 
-Uses images[*].source.video as the cluster key, clones image/annotation IDs
-when a video is sampled more than once, and computes paired COCO AP deltas.
-CPU-only; no detector or NPU service is used.
+Uses images[*].source.video as the cluster key when available. Images without a
+video identifier are kept as singleton clusters; their broader temporal
+dependence cannot be recovered from this annotation file. Clones image and
+annotation IDs when a cluster is sampled more than once, then computes paired
+COCO AP deltas. CPU-only; no detector or NPU service is used.
 """
 from __future__ import annotations
 
@@ -126,13 +128,22 @@ def _load_inputs(root, gt_path, score_floor):
     images = {int(im["id"]): im for im in gt_data["images"]}
     if len(images) != len(gt_data["images"]):
         raise ValueError("duplicate GT image IDs")
-    missing_video = [i for i, im in images.items()
-                     if not im.get("source", {}).get("video")]
-    if missing_video:
-        raise ValueError(f"source.video missing for {len(missing_video)} images")
+    unclustered_singletons = 0
     groups = {}
     for iid, im in images.items():
-        groups.setdefault(str(im["source"]["video"]), []).append(iid)
+        src = im.get("source") or {}
+        video = src.get("video")
+        if video:
+            # Namespace the filename by dataset source to avoid accidental
+            # merging if two folders happen to reuse a video basename.
+            key = "video::{}::{}::{}".format(
+                src.get("drone", ""), src.get("folder_name", ""), video)
+        else:
+            # folder_name is only "rgb"/"multispectral" for the unlinked
+            # still images, so it is not a valid cluster identifier.
+            key = "singleton_image::{}".format(iid)
+            unclustered_singletons += 1
+        groups.setdefault(key, []).append(iid)
     for ids in groups.values():
         ids.sort(key=lambda i: (int(images[i].get("source", {}).get("frame_no", i)), i))
 
@@ -155,7 +166,8 @@ def _load_inputs(root, gt_path, score_floor):
             by_image.setdefault(int(det["image_id"]), []).append(det)
         detections_by_run_image[run_name] = by_image
         summaries[run_name] = json.loads(summary_path.read_text(encoding="utf-8"))
-    return gt_data, images, groups, annotations_by_image, detections_by_run_image, summaries
+    return (gt_data, images, groups, annotations_by_image,
+            detections_by_run_image, summaries, unclustered_singletons)
 
 
 def main():
@@ -175,12 +187,13 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     if any(out_dir.iterdir()):
         ap.error(f"output directory is not empty; choose a new directory: {out_dir}")
-    gt_data, images, groups, annotations_by_image, dets, summaries = _load_inputs(
-        root, gt_path, args.score_floor)
+    (gt_data, images, groups, annotations_by_image, dets, summaries,
+     unclustered_singletons) = _load_inputs(root, gt_path, args.score_floor)
     videos = sorted(groups)
     if len(images) != 1547:
         raise ValueError(f"expected 1547 GT images, got {len(images)}")
-    print(f"clusters={len(videos)} frames={len(images)} score_floor={args.score_floor} reps={args.reps} workers={args.workers}", flush=True)
+    video_clusters = len(videos) - unclustered_singletons
+    print(f"clusters={len(videos)} video_clusters={video_clusters} singleton_images={unclustered_singletons} frames={len(images)} score_floor={args.score_floor} reps={args.reps} workers={args.workers}", flush=True)
     sizes = [len(groups[v]) for v in videos]
     print(f"cluster_frames min/median/max={min(sizes)}/{statistics.median(sizes)}/{max(sizes)}", flush=True)
 
@@ -235,10 +248,13 @@ def main():
                              "seed": args.seed, "score_floor": args.score_floor})
 
     meta = {"gt": str(gt_path), "n_images": len(images), "n_videos": len(videos),
-            "video_field": "images[*].source.video", "cluster_sizes": {"min": min(sizes), "median": statistics.median(sizes), "max": max(sizes)},
+            "cluster_policy": "source.video grouped by drone/folder/video; images without source.video are singleton clusters because folder_name is generic",
+            "n_video_clusters": video_clusters,
+            "n_singleton_images_without_video_id": unclustered_singletons,
+            "cluster_sizes": {"min": min(sizes), "median": statistics.median(sizes), "max": max(sizes)},
             "reps": args.reps, "seed": args.seed, "score_floor": args.score_floor,
             "workers": args.workers, "run_paths": RUNS,
-            "note": "Paired video-cluster bootstrap. Repeatedly sampled video frames receive cloned image and annotation IDs. A4 is the arithmetic mean of seeds 11/23/37; intervals condition on these three seeds and do not estimate seed-to-seed variance."}
+            "note": "Paired cluster bootstrap. source.video groups are resampled together; images lacking video metadata are singleton units, so their within-video dependence is not modeled. Repeatedly sampled frames receive cloned image and annotation IDs. A4 is the arithmetic mean of seeds 11/23/37; intervals condition on these three seeds and do not estimate seed-to-seed variance."}
     (out_dir / "bootstrap_manifest.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"DONE summary={out_dir / 'video_cluster_bootstrap_summary.csv'} manifest={out_dir / 'bootstrap_manifest.json'}", flush=True)
     return 0

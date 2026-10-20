@@ -194,7 +194,7 @@ python3 -u seadronesse_supplement_queue/monitor_supplements.py \
 
 ### 本轮新增任务
 
-配对视频簇 bootstrap 使用 GT 中 `images[*].source.video` 作为重采样单位，基于已保存预测计算各预设比较的 AP、AP50、AP_S 区间，不调用检测服务。先用 20 次抽样估算运行时间：
+配对簇 bootstrap 对有 `source.video` 的图像按视频分组；缺少视频信息的静态图各自作为单帧簇。不能用其通用 `folder_name`（如 `rgb`）合并成簇。该限制意味着这些单帧簇的潜在时间相关性未建模。脚本基于已保存预测计算各预设比较的 AP、AP50、AP_S 区间，不调用检测服务。先用 20 次抽样估算运行时间：
 
 ```bash
 nohup python3 -u seadronesse_supplement_queue/video_cluster_bootstrap.py \\
