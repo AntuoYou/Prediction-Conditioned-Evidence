@@ -194,6 +194,30 @@ python3 -u seadronesse_supplement_queue/monitor_supplements.py \
 
 ### 本轮新增任务
 
+配对视频簇 bootstrap 使用 GT 中 `images[*].source.video` 作为重采样单位，基于已保存预测计算各预设比较的 AP、AP50、AP_S 区间，不调用检测服务。先用 20 次抽样估算运行时间：
+
+```bash
+nohup python3 -u seadronesse_supplement_queue/video_cluster_bootstrap.py \\
+  --repo-root /app/Salience-DETR \\
+  --out-dir experiments/supplement_audit/video_bootstrap_pilot \\
+  --reps 20 --workers 8 \\
+  > experiments/supplement_audit/video_bootstrap_pilot.log 2>&1 < /dev/null &
+echo $! > experiments/supplement_audit/video_bootstrap_pilot.pid
+tail -F experiments/supplement_audit/video_bootstrap_pilot.log
+```
+
+试运行完成并确认 `clusters` 数、有效重复次数及耗时后，再用全新输出目录运行 2000 次正式 bootstrap（不能复用非空 pilot 目录）：
+
+```bash
+nohup python3 -u seadronesse_supplement_queue/video_cluster_bootstrap.py \\
+  --repo-root /app/Salience-DETR \\
+  --out-dir experiments/supplement_audit/video_bootstrap_2000 \\
+  --reps 2000 --workers 8 \\
+  > experiments/supplement_audit/video_bootstrap_2000.log 2>&1 < /dev/null &
+echo $! > experiments/supplement_audit/video_bootstrap_2000.pid
+tail -F experiments/supplement_audit/video_bootstrap_2000.log
+```
+
 旧 A4 是随机 16×16 patch，不能代替方案定义的 6×10 网格随机选 8 格。`protocol_v2.run_a --config A4_grid --seed N` 会为每帧按 `seed + image_id * 1000003` 派生随机流，并将 seed 与 row-major cell ID 写入 `per_image.csv`。建议使用 11、23、37 三个预先固定的 run seed，不拼接或挑选最高分。
 
 简单 ROI 使用 `roi_scale` 对 ROI crop 做等比例降采样，包内 manifest 记录参数，服务端仅凭 packet 解码并恢复 ROI 原尺寸。先运行字节校准：

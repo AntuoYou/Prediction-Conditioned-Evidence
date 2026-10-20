@@ -123,7 +123,7 @@ def main() -> int:
               "check_or_missing_runs": sum(r["status"] != "PASS" for r in runs.values()),
               "runs": list(runs.values()), "A4_three_seed_mean": a4 or None,
               "pairwise": pairs, "conditional_inference": conditionals,
-              "note": "This is a structural/pairwise acceptance report. It does not compute bootstrap intervals; run those as a separate CPU statistical step.")
+              "note": "This is a structural/pairwise acceptance report. It does not compute bootstrap intervals; run those as a separate CPU statistical step."}
     outdir = args.repo_root.resolve() / args.out
     outdir.mkdir(parents=True, exist_ok=True)
     (outdir / "acceptance.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
