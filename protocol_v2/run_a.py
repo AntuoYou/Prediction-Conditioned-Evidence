@@ -143,7 +143,7 @@ def build_packet(cfg, rgb, iid, edge, seed=20261018):
         if cfg.get("explore"):
             cand += sel.exploration_rois(sup, w, h, n=cfg["explore"],
                                          grid=cfg.get("grid", (6, 10)))
-        patches = sel.select_patches(rgb, cand, cfg["ratio"], cfg["select"], ps=sel.PATCH)
+        patches = sel.select_patches(rgb, cand, cfg["ratio"], cfg["select"], ps=sel.PATCH, support_rois=sup)
         pkt = codec.encode_packed(rgb, iid, patches, scale=cfg["scale"],
                                   q_bg=cfg["q_bg"], q_atlas=cfg["q_atlas"],
                                   patch_size=sel.PATCH)
@@ -212,9 +212,17 @@ def main():
                     help="Override isotropic ROI downscale for B3/B6 after byte calibration.")
     ap.add_argument("--q-roi", type=int, default=None,
                     help="Override ROI JPEG quality for B3/B6 after byte calibration.")
+    ap.add_argument("--ratio", type=float, default=None,
+                    help="Override patch retention ratio for packed configs.")
     args = ap.parse_args()
 
     cfg = dict(CONFIGS[args.config])
+    if args.ratio is not None:
+        if cfg.get("mode") != "packed":
+            ap.error("--ratio is only valid for packed configs")
+        if not 0.0 < args.ratio <= 1.0:
+            ap.error("--ratio must be in (0, 1]")
+        cfg["ratio"] = args.ratio
     if args.config in ("B3", "B6"):
         if args.expand is not None:
             cfg["expand"] = args.expand

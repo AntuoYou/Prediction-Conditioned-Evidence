@@ -237,6 +237,8 @@ def _spatial_indices(R, C, k):
         return []
     k = min(k, R * C)
     a = int(min(R, max(1, round(math.sqrt(k * R / float(C))))))
+    # Ensure the spatial grid has at least k cells after dimension limits.
+    a = min(R, max(a, int(math.ceil(k / float(C)))))
     b = int(min(C, max(1, int(math.ceil(k / float(a))))))
     ri = np.round(np.linspace(0, R - 1, a)).astype(int)
     ci = np.round(np.linspace(0, C - 1, b)).astype(int)
@@ -272,7 +274,7 @@ def _evidence_indices(gray, roi, R, C, k, sup_centers, ps=PATCH):
     return keep
 
 
-def select_patches(rgb, rois, ratio, mode, ps=PATCH):
+def select_patches(rgb, rois, ratio, mode, ps=PATCH, support_rois=None):
     """
     在 ROI 内按 ratio 比例挑选 patch 坐标
 
@@ -284,7 +286,9 @@ def select_patches(rgb, rois, ratio, mode, ps=PATCH):
     gray = None
     if mode == "evidence":
         gray = np.asarray(rgb).mean(axis=2) if rgb.ndim == 3 else np.asarray(rgb)
-        sup_centers = [((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0) for r in rois]
+        reference_rois = rois if support_rois is None else support_rois
+        sup_centers = [((r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0)
+                       for r in reference_rois]
 
     grids = [roi_patch_grid(r, ps) for r in rois]
     totals = [R * C for R, C in grids]
